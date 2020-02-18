@@ -19,7 +19,6 @@ export const IWorkingCopyFileService = createDecorator<IWorkingCopyFileService>(
 // like revert and co because the extension should participate?
 // should then also fix delete() and must introduce some event correlation
 // for the before and after hooks...
-// Also: text file model manager should listen, not text file service!
 export interface IWorkingCopyFileService {
 
 	_serviceBrand: undefined;

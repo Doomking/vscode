@@ -9,7 +9,7 @@ import { AsyncEmitter } from 'vs/base/common/event';
 import { IResult, ITextFileOperationResult, ITextFileService, ITextFileStreamContent, ITextFileEditorModel, ITextFileContent, IResourceEncodings, IReadTextFileOptions, IWriteTextFileOptions, toBufferOrReadable, TextFileOperationError, TextFileOperationResult, ITextFileSaveOptions, ITextFileEditorModelManager } from 'vs/workbench/services/textfile/common/textfiles';
 import { IRevertOptions, IEncodingSupport } from 'vs/workbench/common/editor';
 import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
-import { IFileService, FileOperationError, FileOperationResult, IFileStatWithMetadata, ICreateFileOptions, FileOperation, FileOperationWillRunEvent, FileOperationDidRunEvent, FileOperationDidFailEvent } from 'vs/platform/files/common/files';
+import { IFileService, FileOperationError, FileOperationResult, IFileStatWithMetadata, ICreateFileOptions, FileOperation, FileOperationWillRunEvent, FileOperationDidRunEvent } from 'vs/platform/files/common/files';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
 import { IUntitledTextEditorService, IUntitledTextEditorModelManager } from 'vs/workbench/services/untitled/common/untitledTextEditorService';
@@ -20,7 +20,7 @@ import { ResourceMap } from 'vs/base/common/map';
 import { Schemas } from 'vs/base/common/network';
 import { createTextBufferFactoryFromSnapshot, createTextBufferFactoryFromStream } from 'vs/editor/common/model/textModel';
 import { IModelService } from 'vs/editor/common/services/modelService';
-import { isEqualOrParent, isEqual, joinPath, dirname, basename, toLocalResource } from 'vs/base/common/resources';
+import { isEqual, joinPath, dirname, basename, toLocalResource } from 'vs/base/common/resources';
 import { IDialogService, IFileDialogService, IConfirmation } from 'vs/platform/dialogs/common/dialogs';
 import { VSBuffer } from 'vs/base/common/buffer';
 import { ITextSnapshot, ITextModel } from 'vs/editor/common/model';
@@ -35,7 +35,6 @@ import { coalesce } from 'vs/base/common/arrays';
 import { suggestFilename } from 'vs/base/common/mime';
 import { IRemotePathService } from 'vs/workbench/services/path/common/remotePathService';
 import { isValidBasename } from 'vs/base/common/extpath';
-import { IWorkingCopyFileService } from 'vs/workbench/services/workingCopy/common/workingCopyFileService';
 
 /**
  * The workbench file service implementation implements the raw file service spec and adds additional methods on top.
@@ -75,8 +74,7 @@ export abstract class AbstractTextFileService extends Disposable implements ITex
 		@IFilesConfigurationService protected readonly filesConfigurationService: IFilesConfigurationService,
 		@ITextModelService private readonly textModelService: ITextModelService,
 		@ICodeEditorService private readonly codeEditorService: ICodeEditorService,
-		@IRemotePathService private readonly remotePathService: IRemotePathService,
-		@IWorkingCopyFileService private readonly workingCopyFileService: IWorkingCopyFileService
+		@IRemotePathService private readonly remotePathService: IRemotePathService
 	) {
 		super();
 
@@ -85,101 +83,8 @@ export abstract class AbstractTextFileService extends Disposable implements ITex
 
 	protected registerListeners(): void {
 
-		// Working copy operations
-		this._register(this.workingCopyFileService.onWillRunWorkingCopyFileOperation(e => this.onWillRunWorkingCopyFileOperation(e)));
-		this._register(this.workingCopyFileService.onDidFailWorkingCopyFileOperation(e => this.onDidFailWorkingCopyFileOperation(e)));
-		this._register(this.workingCopyFileService.onDidRunWorkingCopyFileOperation(e => this.onDidRunWorkingCopyFileOperation(e)));
-
 		// Lifecycle
 		this.lifecycleService.onShutdown(this.dispose, this);
-	}
-
-	private readonly mapCorrelationIdToModelsToRestore = new Map<number, { resource: URI; snapshot?: ITextSnapshot; encoding?: string; mode?: string }[]>();
-
-	private onWillRunWorkingCopyFileOperation(e: FileOperationWillRunEvent): void {
-
-		// Move / Copy: remember models to restore that are dirty
-		const source = e.source;
-		if (source && (e.operation === FileOperation.COPY || e.operation === FileOperation.MOVE)) {
-			e.waitUntil((async () => {
-
-				// find all models that related to either source or target (can be many if resource is a folder)
-				const sourceModels: ITextFileEditorModel[] = [];
-				const targetModels: ITextFileEditorModel[] = [];
-				for (const model of this.getFileModels()) {
-					const resource = model.resource;
-
-					if (isEqualOrParent(resource, e.target, false /* do not ignorecase, see https://github.com/Microsoft/vscode/issues/56384 */)) {
-						targetModels.push(model);
-					}
-
-					if (isEqualOrParent(resource, source)) {
-						sourceModels.push(model);
-					}
-				}
-
-				// remember each source model to load again after move is done
-				// with optional content to restore if it was dirty
-				const modelsToRestore: { resource: URI; snapshot?: ITextSnapshot; encoding?: string; mode?: string }[] = [];
-				for (const sourceModel of sourceModels) {
-					const sourceModelResource = sourceModel.resource;
-
-					// If the source is the actual model, just use target as new resource
-					let modelToRestoreResource: URI;
-					if (isEqual(sourceModelResource, e.source)) {
-						modelToRestoreResource = e.target;
-					}
-
-					// Otherwise a parent folder of the source is being moved, so we need
-					// to compute the target resource based on that
-					else {
-						modelToRestoreResource = joinPath(e.target, sourceModelResource.path.substr(source.path.length + 1));
-					}
-
-					const modelToRestore = { resource: modelToRestoreResource, encoding: sourceModel.getEncoding(), snapshot: undefined as ITextSnapshot | undefined };
-					if (sourceModel.isDirty()) {
-						modelToRestore.snapshot = sourceModel.createSnapshot();
-					}
-
-					modelsToRestore.push(modelToRestore);
-				}
-
-				this.mapCorrelationIdToModelsToRestore.set(e.correlationId, modelsToRestore);
-			})());
-		}
-	}
-
-	private onDidFailWorkingCopyFileOperation(e: FileOperationDidFailEvent): void {
-		this.mapCorrelationIdToModelsToRestore.delete(e.correlationId);
-	}
-
-	private onDidRunWorkingCopyFileOperation(e: FileOperationDidRunEvent): void {
-		if ((e.operation === FileOperation.COPY || e.operation === FileOperation.MOVE)) {
-			e.waitUntil((async () => {
-				const modelsToRestore = this.mapCorrelationIdToModelsToRestore.get(e.correlationId);
-				if (modelsToRestore) {
-					this.mapCorrelationIdToModelsToRestore.delete(e.correlationId);
-
-					// finally, restore models that we had loaded previously
-					await Promise.all(modelsToRestore.map(async modelToRestore => {
-
-						// restore the model, forcing a reload. this is important because
-						// we know the file has changed on disk after the move and the
-						// model might have still existed with the previous state. this
-						// ensures we are not tracking a stale state.
-						const restoredModel = await this.files.resolve(modelToRestore.resource, { reload: { async: false }, encoding: modelToRestore.encoding, mode: modelToRestore.mode });
-
-						// restore previous dirty content if any and ensure to mark
-						// the model as dirty
-						if (modelToRestore.snapshot && restoredModel.isResolved()) {
-							this.modelService.updateModel(restoredModel.textEditorModel, createTextBufferFactoryFromSnapshot(modelToRestore.snapshot));
-
-							restoredModel.setDirty(true);
-						}
-					}));
-				}
-			})());
-		}
 	}
 
 	//#region text file read / write / create
