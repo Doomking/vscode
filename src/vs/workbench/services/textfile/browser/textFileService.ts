@@ -6,10 +6,10 @@
 import * as nls from 'vs/nls';
 import { URI } from 'vs/base/common/uri';
 import { AsyncEmitter } from 'vs/base/common/event';
-import { IResult, ITextFileOperationResult, ITextFileService, ITextFileStreamContent, ITextFileEditorModel, ITextFileContent, IResourceEncodings, IReadTextFileOptions, IWriteTextFileOptions, toBufferOrReadable, TextFileOperationError, TextFileOperationResult, ITextFileSaveOptions, ITextFileEditorModelManager } from 'vs/workbench/services/textfile/common/textfiles';
+import { IResult, ITextFileOperationResult, ITextFileService, ITextFileStreamContent, ITextFileEditorModel, ITextFileContent, IResourceEncodings, IReadTextFileOptions, IWriteTextFileOptions, toBufferOrReadable, TextFileOperationError, TextFileOperationResult, ITextFileSaveOptions, ITextFileEditorModelManager, TextFileCreateEvent } from 'vs/workbench/services/textfile/common/textfiles';
 import { IRevertOptions, IEncodingSupport } from 'vs/workbench/common/editor';
 import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
-import { IFileService, FileOperationError, FileOperationResult, IFileStatWithMetadata, ICreateFileOptions, FileOperation, FileOperationWillRunEvent, FileOperationDidRunEvent } from 'vs/platform/files/common/files';
+import { IFileService, FileOperationError, FileOperationResult, IFileStatWithMetadata, ICreateFileOptions } from 'vs/platform/files/common/files';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
 import { IUntitledTextEditorService, IUntitledTextEditorModelManager } from 'vs/workbench/services/untitled/common/untitledTextEditorService';
@@ -45,11 +45,11 @@ export abstract class AbstractTextFileService extends Disposable implements ITex
 
 	//#region events
 
-	private _onWillRunTextFileOperation = this._register(new AsyncEmitter<FileOperationWillRunEvent>());
-	readonly onWillRunTextFileOperation = this._onWillRunTextFileOperation.event;
+	private _onWillCreateTextFile = this._register(new AsyncEmitter<TextFileCreateEvent>());
+	readonly onWillCreateTextFile = this._onWillCreateTextFile.event;
 
-	private _onDidRunTextFileOperation = this._register(new AsyncEmitter<FileOperationDidRunEvent>());
-	readonly onDidRunTextFileOperation = this._onDidRunTextFileOperation.event;
+	private _onDidCreateTextFile = this._register(new AsyncEmitter<TextFileCreateEvent>());
+	readonly onDidCreateTextFile = this._onDidCreateTextFile.event;
 
 	//#endregion
 
@@ -58,8 +58,6 @@ export abstract class AbstractTextFileService extends Disposable implements ITex
 	readonly untitled: IUntitledTextEditorModelManager = this.untitledTextEditorService;
 
 	abstract get encoding(): IResourceEncodings;
-
-	private correlationIds = 0;
 
 	constructor(
 		@IFileService protected readonly fileService: IFileService,
@@ -144,10 +142,9 @@ export abstract class AbstractTextFileService extends Disposable implements ITex
 	}
 
 	async create(resource: URI, value?: string | ITextSnapshot, options?: ICreateFileOptions): Promise<IFileStatWithMetadata> {
-		const correlationId = this.correlationIds++;
 
 		// before event
-		await this._onWillRunTextFileOperation.fireAsync({ correlationId, operation: FileOperation.CREATE, target: resource }, CancellationToken.None);
+		await this._onWillCreateTextFile.fireAsync({ resource }, CancellationToken.None);
 
 		const stat = await this.doCreate(resource, value, options);
 
@@ -161,7 +158,7 @@ export abstract class AbstractTextFileService extends Disposable implements ITex
 		}
 
 		// after event
-		await this._onDidRunTextFileOperation.fireAsync({ correlationId, operation: FileOperation.CREATE, target: resource }, CancellationToken.None);
+		await this._onDidCreateTextFile.fireAsync({ resource }, CancellationToken.None);
 
 		return stat;
 	}

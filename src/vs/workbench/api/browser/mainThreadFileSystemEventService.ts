@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { DisposableStore } from 'vs/base/common/lifecycle';
-import { FileChangeType, IFileService, FileOperation, FileOperationWillRunEvent } from 'vs/platform/files/common/files';
+import { FileChangeType, IFileService, FileOperation } from 'vs/platform/files/common/files';
 import { extHostCustomer } from 'vs/workbench/api/common/extHostCustomers';
 import { ExtHostContext, FileSystemEvents, IExtHostContext } from '../common/extHost.protocol';
 import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
@@ -16,6 +16,8 @@ import { IConfigurationService } from 'vs/platform/configuration/common/configur
 import { ILogService } from 'vs/platform/log/common/log';
 import { CancellationTokenSource } from 'vs/base/common/cancellation';
 import { IWorkingCopyFileService } from 'vs/workbench/services/workingCopy/common/workingCopyFileService';
+import { URI } from 'vs/base/common/uri';
+import { IWaitUntil } from 'vs/base/common/event';
 
 @extHostCustomer
 export class MainThreadFileSystemEventService {
@@ -68,7 +70,7 @@ export class MainThreadFileSystemEventService {
 		messages.set(FileOperation.DELETE, localize('msg-delete', "Running 'File Delete' participants..."));
 		messages.set(FileOperation.MOVE, localize('msg-rename', "Running 'File Rename' participants..."));
 
-		function onWillRunFileOperation(e: FileOperationWillRunEvent): void {
+		function onWillRunFileOperation(e: IWaitUntil, operation: FileOperation, target: URI, source?: URI): void {
 			const timeout = configService.getValue<number>('files.participants.timeout');
 			if (timeout <= 0) {
 				return; // disabled
@@ -76,19 +78,19 @@ export class MainThreadFileSystemEventService {
 
 			const p = progressService.withProgress({ location: ProgressLocation.Window }, progress => {
 
-				progress.report({ message: messages.get(e.operation) });
+				progress.report({ message: messages.get(operation) });
 
 				return new Promise((resolve, reject) => {
 
 					const cts = new CancellationTokenSource();
 
 					const timeoutHandle = setTimeout(() => {
-						logService.trace('CANCELLED file participants because of timeout', timeout, e.target, e.operation);
+						logService.trace('CANCELLED file participants because of timeout', timeout, target, operation);
 						cts.cancel();
 						reject(new Error('timeout'));
 					}, timeout);
 
-					proxy.$onWillRunFileOperation(e.operation, e.target, e.source, timeout, cts.token)
+					proxy.$onWillRunFileOperation(operation, target, source, timeout, cts.token)
 						.then(resolve, reject)
 						.finally(() => clearTimeout(timeoutHandle));
 				});
@@ -98,11 +100,11 @@ export class MainThreadFileSystemEventService {
 			e.waitUntil(p);
 		}
 
-		this._listener.add(textFileService.onWillRunTextFileOperation(e => onWillRunFileOperation(e)));
-		this._listener.add(workingCopyFileService.onWillRunWorkingCopyFileOperation(e => onWillRunFileOperation(e)));
+		this._listener.add(textFileService.onWillCreateTextFile(e => onWillRunFileOperation(e, FileOperation.CREATE, e.resource)));
+		this._listener.add(workingCopyFileService.onWillRunWorkingCopyFileOperation(e => onWillRunFileOperation(e, e.operation, e.target, e.source)));
 
 		// AFTER file operation
-		this._listener.add(textFileService.onDidRunTextFileOperation(e => proxy.$onDidRunFileOperation(e.operation, e.target, e.source)));
+		this._listener.add(textFileService.onDidCreateTextFile(e => proxy.$onDidRunFileOperation(FileOperation.CREATE, e.resource, undefined)));
 		this._listener.add(workingCopyFileService.onDidRunWorkingCopyFileOperation(e => proxy.$onDidRunFileOperation(e.operation, e.target, e.source)));
 	}
 

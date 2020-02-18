@@ -13,7 +13,7 @@ import { ITextFileEditorModel, ITextFileEditorModelManager, IModelLoadOrCreateOp
 import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { ResourceMap } from 'vs/base/common/map';
-import { IFileService, FileChangesEvent, FileOperationWillRunEvent, FileOperation, FileOperationDidFailEvent, FileOperationDidRunEvent } from 'vs/platform/files/common/files';
+import { IFileService, FileChangesEvent, FileOperation } from 'vs/platform/files/common/files';
 import { distinct, coalesce } from 'vs/base/common/arrays';
 import { ResourceQueue } from 'vs/base/common/async';
 import { onUnexpectedError } from 'vs/base/common/errors';
@@ -21,7 +21,7 @@ import { TextFileSaveParticipant } from 'vs/workbench/services/textfile/common/t
 import { SaveReason } from 'vs/workbench/common/editor';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { INotificationService } from 'vs/platform/notification/common/notification';
-import { IWorkingCopyFileService } from 'vs/workbench/services/workingCopy/common/workingCopyFileService';
+import { IWorkingCopyFileService, WorkingCopyFileEvent } from 'vs/workbench/services/workingCopy/common/workingCopyFileService';
 import { ITextSnapshot } from 'vs/editor/common/model';
 import { joinPath, isEqualOrParent, isEqual } from 'vs/base/common/resources';
 import { createTextBufferFactoryFromSnapshot } from 'vs/editor/common/model/textModel';
@@ -125,7 +125,7 @@ export class TextFileEditorModelManager extends Disposable implements ITextFileE
 
 	private readonly mapCorrelationIdToModelsToRestore = new Map<number, { resource: URI; model: ITextFileEditorModel, snapshot?: ITextSnapshot; encoding?: string; mode?: string }[]>();
 
-	private onWillRunWorkingCopyFileOperation(e: FileOperationWillRunEvent): void {
+	private onWillRunWorkingCopyFileOperation(e: WorkingCopyFileEvent): void {
 
 		// Move / Copy: remember models to restore that are dirty
 		const source = e.source;
@@ -184,7 +184,7 @@ export class TextFileEditorModelManager extends Disposable implements ITextFileE
 		}
 	}
 
-	private onDidFailWorkingCopyFileOperation(e: FileOperationDidFailEvent): void {
+	private onDidFailWorkingCopyFileOperation(e: WorkingCopyFileEvent): void {
 		if ((e.operation === FileOperation.COPY || e.operation === FileOperation.MOVE)) {
 			const modelsToRestore = this.mapCorrelationIdToModelsToRestore.get(e.correlationId);
 			if (modelsToRestore) {
@@ -195,7 +195,7 @@ export class TextFileEditorModelManager extends Disposable implements ITextFileE
 		}
 	}
 
-	private onDidRunWorkingCopyFileOperation(e: FileOperationDidRunEvent): void {
+	private onDidRunWorkingCopyFileOperation(e: WorkingCopyFileEvent): void {
 		if ((e.operation === FileOperation.COPY || e.operation === FileOperation.MOVE)) {
 			e.waitUntil((async () => {
 				const modelsToRestore = this.mapCorrelationIdToModelsToRestore.get(e.correlationId);

@@ -4,10 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from 'vs/base/common/uri';
-import { Event } from 'vs/base/common/event';
+import { Event, IWaitUntil } from 'vs/base/common/event';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { IEncodingSupport, IModeSupport, ISaveOptions, IRevertOptions, SaveReason } from 'vs/workbench/common/editor';
-import { IBaseStatWithMetadata, IFileStatWithMetadata, IReadFileOptions, IWriteFileOptions, FileOperationError, FileOperationResult, FileOperationWillRunEvent, FileOperationDidRunEvent } from 'vs/platform/files/common/files';
+import { IBaseStatWithMetadata, IFileStatWithMetadata, IReadFileOptions, IWriteFileOptions, FileOperationError, FileOperationResult } from 'vs/platform/files/common/files';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { ITextEditorModel } from 'vs/editor/common/services/resolverService';
 import { ITextBufferFactory, ITextModel, ITextSnapshot } from 'vs/editor/common/model';
@@ -21,19 +21,23 @@ import { IProgress, IProgressStep } from 'vs/platform/progress/common/progress';
 
 export const ITextFileService = createDecorator<ITextFileService>('textFileService');
 
+export interface TextFileCreateEvent extends IWaitUntil {
+	readonly resource: URI;
+}
+
 export interface ITextFileService extends IDisposable {
 
 	_serviceBrand: undefined;
 
 	/**
-	 * An event that is fired before attempting a certain text file IO operation.
+	 * An event that is fired before attempting to create a text file.
 	 */
-	readonly onWillRunTextFileOperation: Event<FileOperationWillRunEvent>;
+	readonly onWillCreateTextFile: Event<TextFileCreateEvent>;
 
 	/**
-	 * An event that is fired after a text file IO operation has been performed.
+	 * An event that is fired after a text file has been created.
 	 */
-	readonly onDidRunTextFileOperation: Event<FileOperationDidRunEvent>;
+	readonly onDidCreateTextFile: Event<TextFileCreateEvent>;
 
 	/**
 	 * Access to the manager of text file editor models providing further

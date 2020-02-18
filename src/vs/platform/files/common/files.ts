@@ -8,7 +8,7 @@ import { sep } from 'vs/base/common/path';
 import { URI } from 'vs/base/common/uri';
 import * as glob from 'vs/base/common/glob';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { Event, IWaitUntil } from 'vs/base/common/event';
+import { Event } from 'vs/base/common/event';
 import { startsWithIgnoreCase } from 'vs/base/common/strings';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { isEqualOrParent, isEqual } from 'vs/base/common/resources';
@@ -430,19 +430,6 @@ export const enum FileOperation {
 	MOVE,
 	COPY
 }
-
-export interface IFileOperationEvent {
-	readonly correlationId: number;
-	readonly operation: FileOperation;
-	readonly target: URI;
-	readonly source?: URI;
-}
-
-export interface FileOperationWillRunEvent extends IFileOperationEvent, IWaitUntil { }
-
-export interface FileOperationDidFailEvent extends IFileOperationEvent, IWaitUntil { }
-
-export interface FileOperationDidRunEvent extends IFileOperationEvent, IWaitUntil { }
 
 export class FileOperationEvent {
 

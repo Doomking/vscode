@@ -5,20 +5,23 @@
 
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { registerSingleton } from 'vs/platform/instantiation/common/extensions';
-import { Event, AsyncEmitter } from 'vs/base/common/event';
+import { Event, AsyncEmitter, IWaitUntil } from 'vs/base/common/event';
 import { URI } from 'vs/base/common/uri';
 import { Disposable } from 'vs/base/common/lifecycle';
-import { IFileService, FileOperation, FileOperationWillRunEvent, FileOperationDidRunEvent, IFileStatWithMetadata, FileOperationDidFailEvent } from 'vs/platform/files/common/files';
+import { IFileService, FileOperation, IFileStatWithMetadata } from 'vs/platform/files/common/files';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { IWorkingCopyService, IWorkingCopy } from 'vs/workbench/services/workingCopy/common/workingCopyService';
 import { isEqualOrParent, isEqual } from 'vs/base/common/resources';
 
 export const IWorkingCopyFileService = createDecorator<IWorkingCopyFileService>('workingCopyFileService');
 
-// TODO@Ben: maybe a better model is that everything is done from the outside
-// like revert and co because the extension should participate?
-// should then also fix delete() and must introduce some event correlation
-// for the before and after hooks...
+export interface WorkingCopyFileEvent extends IWaitUntil {
+	readonly correlationId: number;
+	readonly operation: FileOperation;
+	readonly target: URI;
+	readonly source?: URI;
+}
+
 export interface IWorkingCopyFileService {
 
 	_serviceBrand: undefined;
@@ -29,17 +32,17 @@ export interface IWorkingCopyFileService {
 	/**
 	 * An event that is fired before attempting a certain working copy IO operation.
 	 */
-	readonly onWillRunWorkingCopyFileOperation: Event<FileOperationWillRunEvent>;
+	readonly onWillRunWorkingCopyFileOperation: Event<WorkingCopyFileEvent>;
 
 	/**
 	 * An event that is fired after a working copy IO operation has failed.
 	 */
-	readonly onDidFailWorkingCopyFileOperation: Event<FileOperationDidFailEvent>;
+	readonly onDidFailWorkingCopyFileOperation: Event<WorkingCopyFileEvent>;
 
 	/**
 	 * An event that is fired after a working copy IO operation has been performed.
 	 */
-	readonly onDidRunWorkingCopyFileOperation: Event<FileOperationDidRunEvent>;
+	readonly onDidRunWorkingCopyFileOperation: Event<WorkingCopyFileEvent>;
 
 	//#endregion
 
@@ -82,13 +85,13 @@ export class WorkingCopyFileService extends Disposable implements IWorkingCopyFi
 
 	//#region Events
 
-	private readonly _onWillRunWorkingCopyFileOperation = this._register(new AsyncEmitter<FileOperationWillRunEvent>());
+	private readonly _onWillRunWorkingCopyFileOperation = this._register(new AsyncEmitter<WorkingCopyFileEvent>());
 	readonly onWillRunWorkingCopyFileOperation = this._onWillRunWorkingCopyFileOperation.event;
 
-	private readonly _onDidFailWorkingCopyFileOperation = this._register(new AsyncEmitter<FileOperationDidFailEvent>());
+	private readonly _onDidFailWorkingCopyFileOperation = this._register(new AsyncEmitter<WorkingCopyFileEvent>());
 	readonly onDidFailWorkingCopyFileOperation = this._onDidFailWorkingCopyFileOperation.event;
 
-	private readonly _onDidRunWorkingCopyFileOperation = this._register(new AsyncEmitter<FileOperationDidRunEvent>());
+	private readonly _onDidRunWorkingCopyFileOperation = this._register(new AsyncEmitter<WorkingCopyFileEvent>());
 	readonly onDidRunWorkingCopyFileOperation = this._onDidRunWorkingCopyFileOperation.event;
 
 	//#endregion
