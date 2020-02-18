@@ -123,7 +123,7 @@ export class TextFileEditorModelManager extends Disposable implements ITextFileE
 		}
 	}
 
-	private readonly mapCorrelationIdToModelsToRestore = new Map<number, { resource: URI; snapshot?: ITextSnapshot; encoding?: string; mode?: string }[]>();
+	private readonly mapCorrelationIdToModelsToRestore = new Map<number, { resource: URI; model: ITextFileEditorModel, snapshot?: ITextSnapshot; encoding?: string; mode?: string }[]>();
 
 	private onWillRunWorkingCopyFileOperation(e: FileOperationWillRunEvent): void {
 
@@ -149,7 +149,7 @@ export class TextFileEditorModelManager extends Disposable implements ITextFileE
 
 				// remember each source model to load again after move is done
 				// with optional content to restore if it was dirty
-				const modelsToRestore: { resource: URI; snapshot?: ITextSnapshot; encoding?: string; mode?: string }[] = [];
+				const modelsToRestore: { resource: URI; model: ITextFileEditorModel, snapshot?: ITextSnapshot; encoding?: string; mode?: string }[] = [];
 				for (const sourceModel of sourceModels) {
 					const sourceModelResource = sourceModel.resource;
 
@@ -165,7 +165,13 @@ export class TextFileEditorModelManager extends Disposable implements ITextFileE
 						modelToRestoreResource = joinPath(e.target, sourceModelResource.path.substr(source.path.length + 1));
 					}
 
-					const modelToRestore = { resource: modelToRestoreResource, encoding: sourceModel.getEncoding(), snapshot: undefined as ITextSnapshot | undefined };
+					const modelToRestore = {
+						resource: modelToRestoreResource,
+						model: sourceModel,
+						encoding: sourceModel.getEncoding(),
+						snapshot: undefined as ITextSnapshot | undefined
+					};
+
 					if (sourceModel.isDirty()) {
 						modelToRestore.snapshot = sourceModel.createSnapshot();
 					}
@@ -179,7 +185,14 @@ export class TextFileEditorModelManager extends Disposable implements ITextFileE
 	}
 
 	private onDidFailWorkingCopyFileOperation(e: FileOperationDidFailEvent): void {
-		this.mapCorrelationIdToModelsToRestore.delete(e.correlationId);
+		if ((e.operation === FileOperation.COPY || e.operation === FileOperation.MOVE)) {
+			const modelsToRestore = this.mapCorrelationIdToModelsToRestore.get(e.correlationId);
+			if (modelsToRestore) {
+				this.mapCorrelationIdToModelsToRestore.delete(e.correlationId);
+
+				modelsToRestore.forEach(model => model.model.setDirty(false));
+			}
+		}
 	}
 
 	private onDidRunWorkingCopyFileOperation(e: FileOperationDidRunEvent): void {
